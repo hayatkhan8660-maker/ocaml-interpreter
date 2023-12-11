@@ -418,7 +418,7 @@ let rec print_value : value -> string =
    | ListV vs ->
        "[ "^(String.concat " ; " (List.map print_value vs))^" ]"
 
-(* -- EVALUATING *)
+(* -- EVALUATING 2 *) 
 
 let rec evalE : expE -> (value environment) -> value =   (*incomplete*)
   fun exp env ->
