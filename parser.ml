@@ -43,7 +43,7 @@ P ::= let x = E in P
 
 *)
 
-(* -- EXAMPLES *)
+(* -- EXAMPLES 1 *)
 
 let test1 = "let g (ys:(int list)) = match ys with | [] -> 8 | (x :: xs) -> x 
      in (g (3 :: (7 :: ([] : (int list)))))"
