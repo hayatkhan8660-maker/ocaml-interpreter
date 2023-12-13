@@ -294,16 +294,6 @@ let rec scan : string -> tokenT list =
      | _ -> raise (InvalidCharacter (String.make 1 c))
 
 (* -- Parser Module *)
-(*
-let expectToken : tokenT -> tokenT list -> tokenT list = 
-  fun expected tokens -> 
-   match tokens with
-   |  [] -> raise (InputEndsButExpected (print_token expected))
-   | token1 :: tokens' -> 
-       if token1 = expected
-       then tokens'
-       else raise (TokenSeenButExpected (print_token expected, print_token token1)) *)
-
 let getIdT : tokenT list -> string * tokenT list =
   fun tokens -> 
    match tokens with
