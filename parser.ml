@@ -538,6 +538,7 @@ let rec print_value : value -> string =
    | ClosureV _ -> raise OutputClosure
    | ListV vs ->
        "[ "^(String.concat " ; " (List.map print_value vs))^" ]"
+
    | RecClosureV _ -> raise OutputClosure
 
 (* -- Type Checker Module *)
@@ -715,6 +716,7 @@ let rec evalP prog env =
       let v = RecClosureV (fp, fn, e, env) in 
         evalP body (insertEnv fn v env)
     | ExpP e -> (evalE e env)
+
 
 let run input = 
  try (
