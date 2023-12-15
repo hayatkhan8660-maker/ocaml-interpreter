@@ -55,35 +55,39 @@ let test2 = "let rec h (n:int) = (if 0 < n then (n * (h (n - 1))) else 1 : int)
 (* -- EXCEPTIONS *)
 
 (* for parsing *)
-exception IndentifierExpectedBut of string
+exception IdentifierExpectedError of string
 
 (* for typing and interpretation *)
-exception NotDeclared of string
+exception NotDeclaredError of string
 
-exception InputEndsTooEarly
-exception InputEndsTooLate
+exception EmptyInputException
+exception InputEndsTooLateError
+exception InvalidConsOperationError
 
-exception FunInputTypeMismatch
-exception IfWrongArgs
-exception TestNotInteger
-exception ApplyNotClosure
-exception ExpectedList
-exception InvalidConsArguments
-exception InvalidMatchStatementInput
-exception OperandNotInteger
-exception BranchMismatchType
-exception ConsMismatchType
-exception FunNotFunType
-exception PlusWrongArgs
-exception MinusWrongArgs
-exception TimesWrongArgs
-exception InvalidListType
-exception OutputClosure
+exception OutputClosureError
 exception InvalidCharacter of string
-exception TypeMismatch
-exception InvalidToken
-exception ParseError
-exception ReturnTypeNotMatchRecExpType
+exception TypeMismatchError
+exception InvalidTokenError
+exception ParsingFailureError
+
+exception InvalidMatchStatementInputError
+exception OperandNotIntegerError
+exception BranchMismatchTypeError
+exception ConsMismatchTypeError
+exception FunctionTypeError
+exception FunctionPlusWrongArgsError
+exception FunctionMinusWrongArgsError
+
+exception FunctionInputTypeMismatchError
+exception InvalidTypeComparison
+exception ExpectedInteger
+exception ClosureNotFound
+exception ExpectedListNotFound
+
+exception FunctionTimesWrongArgsError
+exception EmptyListError
+
+exception ReturnTypeRecursiveError
 
 
 (* -- ABSTRACT SYNTAX *)
@@ -95,11 +99,12 @@ type typeY =
   | FunY of typeY * typeY
   | ListY of typeY
 
-let rec checkY t1 t2 = 
-  match (t1, t2) with
+let rec check_typeY t1 t2 =
+  match t1, t2 with
   | IntY, IntY -> true 
-  | ListY t1', ListY t2' -> checkY t1' t2'
-  | FunY (t1', t2'), FunY (t3, t4) -> checkY t1' t3 && checkY t2' t4
+  | ListY t1', ListY t2' -> check_typeY t1' t2'
+  | FunY (t1', t2'), FunY (t3, t4) ->
+    check_typeY t1' t3 && check_typeY t2' t4
   | _ -> false
 
 
@@ -308,16 +313,16 @@ let rec scan : string -> tokenT list =
 let getIdT : tokenT list -> string * tokenT list =
   fun tokens -> 
    match tokens with
-   | [] -> raise InputEndsTooEarly
+   | [] -> raise EmptyInputException
    | (IdT id) :: tokens' -> (id, tokens')
    | (token :: _) -> 
-       raise (IndentifierExpectedBut (print_token token))
+       raise (IdentifierExpectedError (print_token token))
 
 (*    Type Parsing    *)
 let rec parseType : tokenT list -> typeY * tokenT list =
   fun tokens ->
     match tokens with
-    | [] -> raise InputEndsTooEarly
+    | [] -> raise EmptyInputException
     | IntT :: tokens' -> IntY, tokens'
     | LparenT :: tokens' ->
       let t1, tokens1 = parseType tokens' in
@@ -326,19 +331,19 @@ let rec parseType : tokenT list -> typeY * tokenT list =
          let t2, tokens3 = parseType tokens2 in
          (match tokens3 with
           | RparenT :: tokens4 -> FunY (t1, t2), tokens4
-          | _ -> raise ParseError
+          | _ -> raise ParsingFailureError
          )
        | ListT :: RparenT :: tokens2 -> ListY t1, tokens2
-       | _ -> raise ParseError
+       | _ -> raise ParsingFailureError
       )
-    | _ -> raise ParseError
+    | _ -> raise ParsingFailureError
 
 
 (*    Expression Parsing    *)
 let rec parseExp : tokenT list -> expE * tokenT list =   
    fun tokens ->
     match tokens with
-    | [] -> raise InputEndsTooEarly
+    | [] -> raise EmptyInputException
     | ((IdT s) :: tokens1) -> (* Identifier *)
          (IdE s, tokens1)
     | (NumT z) :: tokens1 -> (* Number *)
@@ -354,9 +359,9 @@ let rec parseExp : tokenT list -> expE * tokenT list =
                     | (e4, tokens5) ->
                       (IfLtE (e1, e2, e3, e4), tokens5)
                   )
-                | _ -> raise ParseError
+                | _ -> raise ParsingFailureError
               )
-            | _ -> raise ParseError  
+            | _ -> raise ParsingFailureError  
           )
         | (e1, EqualT :: tokens2) ->
           (match parseExp (tokens2) with
@@ -367,17 +372,17 @@ let rec parseExp : tokenT list -> expE * tokenT list =
                     | (e4, tokens5) ->
                       (IfEqE (e1, e2, e3, e4), tokens5)
                   )
-                | _ -> raise ParseError      
+                | _ -> raise ParsingFailureError      
               )
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
-        | _ -> raise ParseError
+        | _ -> raise ParsingFailureError
       )
     | (LparenT :: LbracketT :: RbracketT :: ColonT :: tokens1) -> (*Empty List clause*)
       (match parseType (tokens1) with
         | (t1, RparenT :: tokens2) ->
           (NilE t1, tokens2)
-        | _ -> raise ParseError
+        | _ -> raise ParsingFailureError
       )
     | (LparenT :: tokens1) ->
       (match (parseExp tokens1) with
@@ -385,31 +390,31 @@ let rec parseExp : tokenT list -> expE * tokenT list =
           (match (parseExp tokens2) with
             | (e2, RparenT :: tokens3) ->
               (PlusE (e1, e2), tokens3)
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
         | (e1, MinusT :: tokens2) ->
           (match (parseExp tokens2) with
             | (e2, RparenT :: tokens3) ->
               (MinusE (e1, e2), tokens3)
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
         | (e1, TimesT :: tokens2) ->
           (match (parseExp tokens2) with
             | (e2, RparenT :: tokens3) ->
               (TimesE (e1, e2), tokens3)
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
         | (e1, ConsT :: tokens2) ->
           (match parseExp (tokens2) with
             | (e2, RparenT :: tokens3) ->
               (ConsE (e1, e2), tokens3)
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
         | (e1, tokens2) ->
           (match parseExp (tokens2) with
             | (e2, RparenT :: tokens3) -> 
               (ApplyE (e1, e2), tokens3)
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
       )
 
@@ -426,13 +431,13 @@ let rec parseExp : tokenT list -> expE * tokenT list =
                         | (e3, tokens6) ->
                           (MatchE (e1, e2, id1, id2, e3), tokens6)
                       )
-                    | _ -> raise ParseError
+                    | _ -> raise ParsingFailureError
                   )
-                | _ -> raise ParseError
+                | _ -> raise ParsingFailureError
               )
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
-        | _ -> raise ParseError
+        | _ -> raise ParsingFailureError
       )
     | (FunT :: tokens1) -> (*Function clause*)
       (match (getIdT tokens1) with
@@ -443,11 +448,11 @@ let rec parseExp : tokenT list -> expE * tokenT list =
                 | (e, tokens4) ->
                   (FunE (fp, t, e), tokens4)
               )
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
-        | _ -> raise ParseError
+        | _ -> raise ParsingFailureError
       )
-    | _ -> raise ParseError    
+    | _ -> raise ParsingFailureError    
 
 (*    Program Parsing    *)
 let rec parseProg : tokenT list -> progP * tokenT list =   
@@ -468,15 +473,15 @@ let rec parseProg : tokenT list -> progP * tokenT list =
                             | (p, tokens7) ->
                               (LetRecP (fn, fp, fpType, e, eType, p), tokens7)
                           )
-                        | _ -> raise ParseError  
+                        | _ -> raise ParsingFailureError  
                       )
-                    | _ -> raise ParseError  
+                    | _ -> raise ParsingFailureError  
                   )
-                | _ -> raise ParseError 
+                | _ -> raise ParsingFailureError 
               )
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
-        | _ -> raise ParseError
+        | _ -> raise ParsingFailureError
       )
     | (LetT :: tokens1) ->
       (match (getIdT tokens1) with 
@@ -491,11 +496,11 @@ let rec parseProg : tokenT list -> progP * tokenT list =
                         | (p, tokens6) ->
                           (LetFunP (fn, fp, fpType, e, p), tokens6)
                       )
-                    | _ -> raise ParseError
+                    | _ -> raise ParsingFailureError
                   )
-                | _ -> raise ParseError
+                | _ -> raise ParsingFailureError
               )
-            | _ -> raise ParseError
+            | _ -> raise ParsingFailureError
           )
         | (fp, EqualT :: tokens2) ->
           (match (parseExp tokens2) with 
@@ -504,9 +509,9 @@ let rec parseProg : tokenT list -> progP * tokenT list =
                 | (p, tokens4) ->
                   (LetVarP (fp, e, p)), tokens4
               )
-            | _ -> raise ParseError   
+            | _ -> raise ParsingFailureError   
           )
-        | _ -> raise ParseError
+        | _ -> raise ParsingFailureError
       )
     | _ -> 
       (match (parseExp tokens) with
@@ -520,13 +525,13 @@ let parse : string -> progP =
     let (prog,tokens1) = parseProg tokens
     in if tokens1 = []
        then prog
-       else raise InputEndsTooLate
+       else raise InputEndsTooLateError
 
 (* -- ENVIRONMENTS *)
 type 'a environment =  identifier -> 'a
 
 let initEnv : 'a environment = 
-  fun id -> raise (NotDeclared id)
+  fun id -> raise (NotDeclaredError id)
 
 let insertEnv : identifier -> 'a -> 'a environment -> 'a environment =
   fun new_id a env ->
@@ -551,46 +556,46 @@ let rec typeE exp env =
     let t1 = typeE exp1 env in
     let t2 = typeE exp2 env in
     let t3 = typeE exp3 env in
-    if checkY t0 IntY && checkY t1 IntY then
-      if checkY t2 t3 then t2
-      else raise BranchMismatchType
-    else raise OperandNotInteger
+    if check_typeY t0 IntY && check_typeY t1 IntY then
+      if check_typeY t2 t3 then t2
+      else raise BranchMismatchTypeError
+    else raise OperandNotIntegerError
   | PlusE (exp1, exp2)
   | MinusE (exp1, exp2)
   | TimesE (exp1, exp2) ->
     let t1 = typeE exp1 env in
     let t2 = typeE exp2 env in
-    if checkY t1 IntY && checkY t2 IntY then IntY
-    else raise OperandNotInteger
+    if check_typeY t1 IntY && check_typeY t2 IntY then IntY
+    else raise OperandNotIntegerError
   | NilE typeY ->
     (match typeY with 
       | ListY typ -> typeY
-      | _ -> raise InvalidListType)
+      | _ -> raise EmptyListError)
   | ConsE (exp1, exp2) ->
     let t1 = typeE exp1 env in
     let t2 = typeE exp2 env in
     (match t2 with 
       | ListY inTyp ->
-        if checkY inTyp t1 then t2
-        else raise TypeMismatch
-      | _ -> raise ConsMismatchType)
+        if check_typeY inTyp t1 then t2
+        else raise TypeMismatchError
+      | _ -> raise ConsMismatchTypeError)
   | ApplyE (exp1, exp2) ->
     let t1 = typeE exp1 env in
     let t2 = typeE exp2 env in
     (match t1 with 
       | FunY (inTyp, outTyp) ->
-        if checkY inTyp t2 then outTyp
-        else raise FunInputTypeMismatch
-      | _ -> raise FunNotFunType)
+        if check_typeY inTyp t2 then outTyp
+        else raise FunctionInputTypeMismatchError
+      | _ -> raise FunctionTypeError)
   | MatchE (exp0, exp1, id1, id2, exp2) ->
     let t0 = typeE exp0 env in
     let t1 = typeE exp1 env in
     let t2 = match t0 with 
       | ListY lt0 -> typeE exp2 (insertEnv id1 lt0 (insertEnv id2 t0 env))
-      | _ -> raise InvalidMatchStatementInput
+      | _ -> raise InvalidMatchStatementInputError
     in
-    if checkY t1 t2 then t1
-    else raise BranchMismatchType
+    if check_typeY t1 t2 then t1
+    else raise BranchMismatchTypeError
 
 let rec typeP prog env = 
   match prog with 
@@ -606,10 +611,10 @@ let rec typeP prog env =
     
   | LetRecP (fn, fp, t1, exp, te, prog) ->
     let rt = typeE exp (insertEnv fp t1 (insertEnv fn (FunY (t1, te)) env)) in
-    if checkY rt te then
+    if check_typeY rt te then
       typeP prog (insertEnv fn (FunY (t1, rt)) env)
     else
-      raise ReturnTypeNotMatchRecExpType
+      raise ReturnTypeRecursiveError
 (* UP *)
 (* -- VALUES *)
 
@@ -624,11 +629,11 @@ let rec print_value : value -> string =
   fun v -> 
    match v with
    | NumV v -> string_of_int v
-   | ClosureV _ -> raise OutputClosure
+   | ClosureV _ -> raise OutputClosureError
    | ListV vs ->
        "[ "^(String.concat " ; " (List.map print_value vs))^" ]"
    (* This Line *)
-   | RecClosureV _ -> raise OutputClosure
+   | RecClosureV _ -> raise OutputClosureError
 
 (* Down *)
 (* -- Evaluation Module *)
@@ -640,43 +645,43 @@ let rec evalE exp env =
     (match (evalE exp1 env, evalE exp2 env) with 
       | (NumV n1, NumV n2) ->
           NumV (n1 + n2)
-      | _ -> raise PlusWrongArgs)
+      | _ -> raise FunctionPlusWrongArgsError)
   | ConsE (exp1, exp2) ->
     (match (evalE exp1 env, evalE exp2 env) with 
       | (v1, ListV l1) -> ListV (v1 :: l1)
-      | _ -> raise InvalidConsArguments)
+      | _ -> raise InvalidConsOperationError)
   | IfLtE (exp0, exp1, exp2, exp3) ->
     (match (evalE exp0 env, evalE exp1 env) with 
       | (NumV n1, NumV n2) ->
         if n1 < n2 
         then evalE exp2 env
         else evalE exp3 env
-      | _ -> raise TestNotInteger)
+      | _ -> raise ExpectedInteger)
   | FunE (id, typeY, exp1) -> ClosureV (id, exp1, env)
   | TimesE (exp1, exp2) ->
     (match (evalE exp1 env, evalE exp2 env) with 
       | (NumV n1, NumV n2) ->
           NumV (n1 * n2)
-      | _ -> raise TimesWrongArgs)
+      | _ -> raise FunctionTimesWrongArgsError)
   | ApplyE (exp1, exp2) ->
     (match (evalE exp1 env, evalE exp2 env) with 
       | (ClosureV (x, exp0, env0), v2) ->
           evalE exp0 (insertEnv x v2 env0)
       | (RecClosureV (x, f, exp0, env0), v2) ->
           evalE exp0 (insertEnv x v2 (insertEnv f (RecClosureV (x, f, exp0, env0)) env0))
-      | _ -> raise ApplyNotClosure)
+      | _ -> raise ClosureNotFound)
   | IfEqE (exp0, exp1, exp2, exp3) ->
       (match (evalE exp0 env, evalE exp1 env) with
         | (NumV n1, NumV n2) ->
           if n1 = n2
           then evalE exp2 env 
           else evalE exp3 env 
-        | _ -> raise TestNotInteger)
+        | _ -> raise ExpectedInteger)
   | MinusE (exp1, exp2) ->
     (match (evalE exp1 env, evalE exp2 env) with 
       | (NumV n1, NumV n2) ->
           NumV (n1 - n2)
-      | _ -> raise MinusWrongArgs)
+      | _ -> raise FunctionMinusWrongArgsError)
   | NilE typeY -> ListV []
   
 
@@ -686,7 +691,7 @@ let rec evalE exp env =
         (match l1 with 
           | [] -> evalE exp1 env
           | x :: xs -> evalE exp2 (insertEnv id1 x (insertEnv id2 (ListV xs) env)))
-      | _ -> raise ExpectedList)
+      | _ -> raise ExpectedListNotFound)
 (* HERE*)
 let rec evalP prog env = 
   match prog with 
@@ -709,28 +714,31 @@ let run input =
   let v = evalP p initEnv in
  print_value v )
   with
-  | ParseError -> "parse error"
-  | InputEndsTooEarly -> "input was exhausted before parsing was completed"
-  | InputEndsTooLate -> "input continous after program is parsed"
-  | IndentifierExpectedBut s -> "Identifier expected but found "^s
-  | NotDeclared s -> "Identifier"^s^" used but not declared"
-  | FunInputTypeMismatch -> "argument type does not match function type"
-  | IfWrongArgs -> "types of compared values are invalid"
-  | TestNotInteger -> "expected integer value"
-  | ApplyNotClosure -> "expected closure but not found"
-  | ExpectedList -> "match expects list as input"
-  | InvalidConsArguments -> "expected second argument to be a list"
-  | InvalidMatchStatementInput -> "expected list input for match statement"
-  | FunNotFunType -> "function part of application not of function type"
-  | PlusWrongArgs -> "+ expects two integers as input"
-  | MinusWrongArgs -> "- expects two integers as input"
-  | TimesWrongArgs -> "* expects two integers as input"
-  | InvalidListType -> "empty list need to be a list type"
-  | OutputClosure -> "closure part of what is being returned"
-  | InvalidCharacter s -> "expected valid character but found "^s
-  | TypeMismatch -> "expected two or more expressions to have the same type"
-  | InvalidToken -> "invalid token appeared during evaluation"
-  | ReturnTypeNotMatchRecExpType -> "return type of function does not match expected type of recursive expression"
-  | OperandNotInteger -> "operation expects integers as input"
-  | BranchMismatchType -> "branches do not have the same type"
-  | ConsMismatchType -> "expected cons arguments to have types that look like: (type :: (type list))"
+  | ParsingFailureError -> "#### Exception!! Failed to parse the data. Review the input for correctness. ####"
+  | InputEndsTooLateError -> "#### Exception!! The input terminated unexpectedly. Please check the end of your input data. ####"
+  | IdentifierExpectedError s -> "#### Exception!! An identifier is expected at this point in the code. Please check your input. "^s
+  | NotDeclaredError s -> "#### Exception!! "^s^" is used but not declared. ####"
+
+  | InvalidConsOperationError -> "#### Exception!! Invalid arguments for cons operation. Expected the second argument to be a list. ####"
+  | InvalidMatchStatementInputError -> "#### Exception!! Invalid input for match statement. Expected a list. ####"
+  | FunctionTypeError -> "#### Exception!! The function part of the application is not of function type. ####"
+  | FunctionPlusWrongArgsError -> "#### Exception!! The + expects two integers as input. Please enter atleast two arguments ####"
+  | FunctionMinusWrongArgsError -> "#### Exception!! The - expects two integers as input. Please enter atleast two arguments ####"
+  | FunctionTimesWrongArgsError -> "#### Exception!! The * expects two integers as input Please enter atleast two arguments ####"
+
+  | EmptyListError -> "#### Exception!! Empty list should have a list type ####"
+  | OutputClosureError -> "#### Exception!! Closure value encountered in return statement. Cannot return closures. ####"
+  | InvalidCharacter s -> "#### Exception!! Invalid character encountered: "^s^" ####"
+  | TypeMismatchError -> "#### Exception!! Type mismatch encountered. Expected two or more expressions to have the same type. ####"
+  | InvalidTokenError -> "#### Exception!! Invalid token encountered during evaluation ####"
+  | ReturnTypeRecursiveError -> "#### Exception!! Return type of function does not match the expected type of the recursive expression. ####"
+  | OperandNotIntegerError -> "#### Exception!! The operation expects integers as input. ####"
+  | BranchMismatchTypeError -> "#### Exception!! Branches have different types. ####"
+  | ConsMismatchTypeError -> "#### Exception!! Types of cons arguments are mismatched. Expected arguments of the form: (type :: (type list)) ####"
+
+  | FunctionInputTypeMismatchError -> "#### Exception!! Input type mismatch in function  ####"
+  | InvalidTypeComparison -> "#### Exception!! Types of compared values are invalid ####"
+  | ExpectedInteger -> "#### Exception!! Expected integer not found ####"
+  | ClosureNotFound -> "#### Exception!! Expected closure not found ####"
+  | ExpectedListNotFound -> "#### Exception!! Expected list not found ####"
+  | EmptyInputException -> "#### Exception!! Empty Input. You need to input something ####"
