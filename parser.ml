@@ -54,10 +54,15 @@ let test2 = "let rec h (n:int) = (if 0 < n then (n * (h (n - 1))) else 1 : int)
 
 (* -- EXCEPTIONS *)
 
+(* for parsing *)
+exception IndentifierExpectedBut of string
+
+(* for typing and interpretation *)
+exception NotDeclared of string
+
 exception InputEndsTooEarly
 exception InputEndsTooLate
-exception IndentifierExpectedBut of string 
-exception NotDeclared of string
+
 exception FunInputTypeMismatch
 exception IfWrongArgs
 exception TestNotInteger
@@ -90,6 +95,14 @@ type typeY =
   | FunY of typeY * typeY
   | ListY of typeY
 
+let rec checkY t1 t2 = 
+  match (t1, t2) with
+  | IntY, IntY -> true 
+  | ListY t1', ListY t2' -> checkY t1' t2'
+  | FunY (t1', t2'), FunY (t3, t4) -> checkY t1' t3 && checkY t2' t4
+  | _ -> false
+
+
 let rec print_type : typeY -> string =
   fun t ->
    match t with
@@ -98,12 +111,7 @@ let rec print_type : typeY -> string =
        "("^(print_type t1)^" -> "^(print_type t2)^")"
    | ListY t1 -> (print_type t1)^" list"
 
-let rec checkY t1 t2 = 
-  match (t1, t2) with
-  | (IntY, IntY) -> true 
-  | (ListY t1, ListY t2) -> (checkY t1 t2)
-  | (FunY (t1, t2), FunY (t3, t4)) -> (checkY t1 t3) && (checkY t2 t4)
-  | _ -> false 
+ 
 
 type expE =
   | NumE of int
@@ -226,28 +234,29 @@ let scanId : string -> (string * string) = fun str ->
       else (acc, str)
  in get_id "" str
 
- let string_of_char c = String.make 1 c
+ (* added functions *)
 
- let explode str = 
-  let rec explode_inner cur_index chars = 
+ let chars2string chars =
+  List.fold_left (fun acc c -> acc ^ String.make 1 c) "" chars
+
+let idx2charslist str =
+  let rec idx2charslist2 cur_index chars =
     if cur_index < String.length str then
       let new_char = str.[cur_index] in
-      explode_inner (cur_index + 1) (chars @ [new_char])
-    else chars in 
-    explode_inner 0 []
+      idx2charslist2 (cur_index + 1) (new_char :: chars)
+    else List.rev chars
+  in
+  idx2charslist2 0 []
 
-  let rec implode chars = 
-    match chars with
-    [] -> ""
-    | h::t -> string_of_char h ^ (implode t)
+let string2tuple : string -> (tokenT * string) = fun str ->
+  match idx2charslist str with
+  | '-' :: '>' :: str' -> (ArrowT, chars2string str')
+  | '-' :: str' -> (MinusT, chars2string str')
+  | ':' :: ':' :: str' -> (ConsT, chars2string str')
+  | ':' :: str' -> (ColonT, chars2string str')
+  | _ -> raise (InvalidCharacter "InvalidCharacter! There is neither \"->\" nor \":\"")
 
-  let checkLongOp : string -> (tokenT * string) = fun str ->
-    match (explode str) with
-    | '-' :: '>' :: str' -> (ArrowT, (implode str'))
-    | '-' :: str' -> (MinusT, (implode str'))
-    | ':' :: ':' :: str' -> (ConsT, (implode str'))
-    | ':' :: str' -> (ColonT , (implode str'))
-    | _ -> raise (InvalidCharacter "not \"-\" or \":\"")
+ (* added functions *)
 
 let rec scan : string -> tokenT list = 
   fun str -> 
@@ -284,13 +293,15 @@ let rec scan : string -> tokenT list =
      | '[' -> LbracketT :: (scan str1)
      | ']' -> RbracketT :: (scan str1)
      | '|' -> VbarT :: (scan str1)
-     | '-' -> let (token, str1) = (checkLongOp str) in (token :: scan str1)
-     | ':' -> let (token, str1) = (checkLongOp str) in (token :: scan str1)
+     (* Changed here *)
+     | '-' -> let (token, str1) = (string2tuple str) in (token :: scan str1)
+     | ':' -> let (token, str1) = (string2tuple str) in (token :: scan str1)
      | ' ' -> scan str1
+     (* added here *)
      | '\x0c' -> scan str1
-     | '\n' -> scan str1
+     | '\n' -> scan str1 (* Enter *)
      | '\r' -> scan str1
-     | '\t' -> scan str1
+     | '\t' -> scan str1 (* Tab *)
      | _ -> raise (InvalidCharacter (String.make 1 c))
 
 (* -- Parser Module *)
@@ -303,24 +314,25 @@ let getIdT : tokenT list -> string * tokenT list =
        raise (IndentifierExpectedBut (print_token token))
 
 (*    Type Parsing    *)
-let rec parseType : tokenT list -> typeY * tokenT list =  
-   fun tokens ->
+let rec parseType : tokenT list -> typeY * tokenT list =
+  fun tokens ->
     match tokens with
     | [] -> raise InputEndsTooEarly
-    | (IntT :: tokens1) ->
-         (IntY , tokens1)
-    | (LparenT :: tokens1) ->
-      (match parseType tokens1 with
-        | (t1, ArrowT :: tokens2) ->
-          (match (parseType tokens2) with
-            | (t2, RparenT :: tokens3) ->
-              (FunY (t1, t2), tokens3)
-            | _ -> raise ParseError
-          )
-        | (t, ListT :: RparenT :: tokens2) -> (ListY t, tokens2)
-        | _ -> raise ParseError
+    | IntT :: tokens' -> IntY, tokens'
+    | LparenT :: tokens' ->
+      let t1, tokens1 = parseType tokens' in
+      (match tokens1 with
+       | ArrowT :: tokens2 ->
+         let t2, tokens3 = parseType tokens2 in
+         (match tokens3 with
+          | RparenT :: tokens4 -> FunY (t1, t2), tokens4
+          | _ -> raise ParseError
+         )
+       | ListT :: RparenT :: tokens2 -> ListY t1, tokens2
+       | _ -> raise ParseError
       )
     | _ -> raise ParseError
+
 
 (*    Expression Parsing    *)
 let rec parseExp : tokenT list -> expE * tokenT list =   
@@ -523,12 +535,89 @@ let insertEnv : identifier -> 'a -> 'a environment -> 'a environment =
 let retrieveEnv : 'a environment -> identifier -> 'a =
   fun env id -> env id
 
+(* DOWN *)
+(* -- TYPING *)
+
+let rec typeE exp env = 
+  match exp with 
+  | NumE n -> IntY
+  | IdE id -> retrieveEnv env id 
+  | FunE (id, typeY, exp1) ->
+    let t1 = typeE exp1 (insertEnv id typeY env) in 
+    FunY (typeY, t1)
+  | IfEqE (exp0, exp1, exp2, exp3)
+  | IfLtE (exp0, exp1, exp2, exp3) ->
+    let t0 = typeE exp0 env in
+    let t1 = typeE exp1 env in
+    let t2 = typeE exp2 env in
+    let t3 = typeE exp3 env in
+    if checkY t0 IntY && checkY t1 IntY then
+      if checkY t2 t3 then t2
+      else raise BranchMismatchType
+    else raise OperandNotInteger
+  | PlusE (exp1, exp2)
+  | MinusE (exp1, exp2)
+  | TimesE (exp1, exp2) ->
+    let t1 = typeE exp1 env in
+    let t2 = typeE exp2 env in
+    if checkY t1 IntY && checkY t2 IntY then IntY
+    else raise OperandNotInteger
+  | NilE typeY ->
+    (match typeY with 
+      | ListY typ -> typeY
+      | _ -> raise InvalidListType)
+  | ConsE (exp1, exp2) ->
+    let t1 = typeE exp1 env in
+    let t2 = typeE exp2 env in
+    (match t2 with 
+      | ListY inTyp ->
+        if checkY inTyp t1 then t2
+        else raise TypeMismatch
+      | _ -> raise ConsMismatchType)
+  | ApplyE (exp1, exp2) ->
+    let t1 = typeE exp1 env in
+    let t2 = typeE exp2 env in
+    (match t1 with 
+      | FunY (inTyp, outTyp) ->
+        if checkY inTyp t2 then outTyp
+        else raise FunInputTypeMismatch
+      | _ -> raise FunNotFunType)
+  | MatchE (exp0, exp1, id1, id2, exp2) ->
+    let t0 = typeE exp0 env in
+    let t1 = typeE exp1 env in
+    let t2 = match t0 with 
+      | ListY lt0 -> typeE exp2 (insertEnv id1 lt0 (insertEnv id2 t0 env))
+      | _ -> raise InvalidMatchStatementInput
+    in
+    if checkY t1 t2 then t1
+    else raise BranchMismatchType
+
+let rec typeP prog env = 
+  match prog with 
+  | ExpP e -> typeE e env
+    
+  | LetVarP (fp, exp, prog) ->
+    let et = typeE exp env in 
+    typeP prog (insertEnv fp et env)
+    
+  | LetFunP (fn, fp, t1, exp, prog) -> 
+    let et = typeE exp (insertEnv fp t1 env) in 
+    typeP prog (insertEnv fn (FunY (t1, et)) env)
+    
+  | LetRecP (fn, fp, t1, exp, te, prog) ->
+    let rt = typeE exp (insertEnv fp t1 (insertEnv fn (FunY (t1, te)) env)) in
+    if checkY rt te then
+      typeP prog (insertEnv fn (FunY (t1, rt)) env)
+    else
+      raise ReturnTypeNotMatchRecExpType
+(* UP *)
 (* -- VALUES *)
 
 type value =
    NumV of int
  | ListV of value list
  | ClosureV of identifier * expE * value environment
+ (* DOWN *)
  | RecClosureV of identifier * identifier * expE * value environment
 
 let rec print_value : value -> string =
@@ -538,130 +627,24 @@ let rec print_value : value -> string =
    | ClosureV _ -> raise OutputClosure
    | ListV vs ->
        "[ "^(String.concat " ; " (List.map print_value vs))^" ]"
-
+   (* This Line *)
    | RecClosureV _ -> raise OutputClosure
 
-(* -- Type Checker Module *)
-
-let rec typeE exp env = 
-  match exp with 
-  | NumE n -> IntY
-  | IdE id -> retrieveEnv env id 
-  | FunE (id, typeY, exp1) ->
-    let t1 = (typeE exp1 (insertEnv id typeY env)) in 
-    FunY (typeY, t1)
-  | IfEqE (exp0, exp1, exp2, exp3) ->
-    let t0 = (typeE exp0 env) in
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    let t3 = (typeE exp3 env) in
-    if (checkY t0 IntY) && (checkY t1 IntY)
-      then (if (checkY t2 t3)
-        then t2
-        else raise BranchMismatchType)
-      else raise OperandNotInteger
-
-  | IfLtE (exp0, exp1, exp2, exp3) ->
-    let t0 = (typeE exp0 env) in
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    let t3 = (typeE exp3 env) in 
-    if (checkY t0 IntY) && (checkY t1 IntY)
-      then (if (checkY t2 t3)
-        then t2
-        else raise BranchMismatchType)
-      else raise OperandNotInteger
-
-  | PlusE (exp1, exp2) -> 
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    if (checkY t1 IntY) && (checkY t2 IntY)
-      then IntY
-      else raise OperandNotInteger
-  
-  | MinusE (exp1, exp2) ->
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    if (checkY t1 IntY) && (checkY t2 IntY)
-      then IntY
-      else raise OperandNotInteger
-
-  | TimesE (exp1, exp2) ->
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    if (checkY t1 IntY) && (checkY t2 IntY)
-      then IntY
-      else raise OperandNotInteger
-
-  | NilE typeY ->
-    (match typeY with 
-      | ListY typ -> typeY
-      | _ -> raise InvalidListType)
-
-  | ConsE (exp1, exp2) ->
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    (match t2 with 
-      | ListY (inTyp) ->
-        if (checkY inTyp t1)
-          then t2
-          else raise TypeMismatch
-      | _ -> raise ConsMismatchType)
-      
-  | ApplyE (exp1, exp2) ->
-    let t1 = (typeE exp1 env) in
-    let t2 = (typeE exp2 env) in
-    (match t1 with 
-      | FunY (inTyp, outTyp) ->
-        if (checkY inTyp t2)
-          then outTyp
-          else raise FunInputTypeMismatch
-      | _ -> raise FunNotFunType)
-
-  | MatchE (exp0, exp1, id1, id2, exp2) ->
-    let t0 = (typeE exp0 env) in
-    let t1 = (typeE exp1 env) in
-    let t2 = (match t0 with 
-                | (ListY lt0) ->
-                    (typeE exp2 (insertEnv id1 lt0 (insertEnv id2 t0 env)))
-                | _ -> raise InvalidMatchStatementInput
-              ) in
-    if (checkY t1 t2)
-      then t1
-      else raise BranchMismatchType
-
-let rec typeP prog env = 
-  match prog with 
-    | (ExpP e) -> (typeE e env)
-    
-    | (LetVarP (fp, exp, prog)) ->
-      let et = (typeE exp env) in 
-        (typeP prog (insertEnv fp et env))
-    
-        | (LetFunP (fn, fp, t1, exp, prog)) -> 
-      let et = (typeE exp (insertEnv fp t1 env)) in 
-        (typeP prog (insertEnv fn (FunY (t1, et)) env))
-    
-    | (LetRecP (fn, fp, t1, exp, te, prog)) ->
-      let rt = (typeE exp (insertEnv fp t1 (insertEnv fn (FunY (t1, te)) env))) in
-        if (checkY rt te)
-          then (typeP prog (insertEnv fn (FunY (t1, rt)) env))
-          else raise ReturnTypeNotMatchRecExpType
-    
-
+(* Down *)
 (* -- Evaluation Module *)
 let rec evalE exp env = 
   match exp with 
   | NumE n -> NumV n
   | IdE id -> retrieveEnv env id
-  | FunE (id, typeY, exp1) -> ClosureV (id, exp1, env)
-  | IfEqE (exp0, exp1, exp2, exp3) ->
-      (match (evalE exp0 env, evalE exp1 env) with
-        | (NumV n1, NumV n2) ->
-          if n1 = n2
-          then evalE exp2 env 
-          else evalE exp3 env 
-        | _ -> raise TestNotInteger)
+  | PlusE (exp1, exp2) ->
+    (match (evalE exp1 env, evalE exp2 env) with 
+      | (NumV n1, NumV n2) ->
+          NumV (n1 + n2)
+      | _ -> raise PlusWrongArgs)
+  | ConsE (exp1, exp2) ->
+    (match (evalE exp1 env, evalE exp2 env) with 
+      | (v1, ListV l1) -> ListV (v1 :: l1)
+      | _ -> raise InvalidConsArguments)
   | IfLtE (exp0, exp1, exp2, exp3) ->
     (match (evalE exp0 env, evalE exp1 env) with 
       | (NumV n1, NumV n2) ->
@@ -669,26 +652,12 @@ let rec evalE exp env =
         then evalE exp2 env
         else evalE exp3 env
       | _ -> raise TestNotInteger)
-  | PlusE (exp1, exp2) ->
-    (match (evalE exp1 env, evalE exp2 env) with 
-      | (NumV n1, NumV n2) ->
-          NumV (n1 + n2)
-      | _ -> raise PlusWrongArgs)
-  | MinusE (exp1, exp2) ->
-    (match (evalE exp1 env, evalE exp2 env) with 
-      | (NumV n1, NumV n2) ->
-          NumV (n1 - n2)
-      | _ -> raise MinusWrongArgs)
+  | FunE (id, typeY, exp1) -> ClosureV (id, exp1, env)
   | TimesE (exp1, exp2) ->
     (match (evalE exp1 env, evalE exp2 env) with 
       | (NumV n1, NumV n2) ->
           NumV (n1 * n2)
       | _ -> raise TimesWrongArgs)
-  | NilE typeY -> (ListV [])
-  | ConsE (exp1, exp2) ->
-    (match (evalE exp1 env, evalE exp2 env) with 
-      | (v1, ListV l1) -> (ListV (v1 :: l1))
-      | _ -> raise InvalidConsArguments)
   | ApplyE (exp1, exp2) ->
     (match (evalE exp1 env, evalE exp2 env) with 
       | (ClosureV (x, exp0, env0), v2) ->
@@ -696,27 +665,41 @@ let rec evalE exp env =
       | (RecClosureV (x, f, exp0, env0), v2) ->
           evalE exp0 (insertEnv x v2 (insertEnv f (RecClosureV (x, f, exp0, env0)) env0))
       | _ -> raise ApplyNotClosure)
+  | IfEqE (exp0, exp1, exp2, exp3) ->
+      (match (evalE exp0 env, evalE exp1 env) with
+        | (NumV n1, NumV n2) ->
+          if n1 = n2
+          then evalE exp2 env 
+          else evalE exp3 env 
+        | _ -> raise TestNotInteger)
+  | MinusE (exp1, exp2) ->
+    (match (evalE exp1 env, evalE exp2 env) with 
+      | (NumV n1, NumV n2) ->
+          NumV (n1 - n2)
+      | _ -> raise MinusWrongArgs)
+  | NilE typeY -> ListV []
+  
+
   | MatchE (exp0, exp1, id1, id2, exp2) ->
     (match (evalE exp0 env) with
-      | (ListV l1) ->
+      | ListV l1 ->
         (match l1 with 
           | [] -> evalE exp1 env
-          | (x :: xs) -> evalE exp2 (insertEnv id1 x (insertEnv id2 (ListV xs) env)))
+          | x :: xs -> evalE exp2 (insertEnv id1 x (insertEnv id2 (ListV xs) env)))
       | _ -> raise ExpectedList)
-
+(* HERE*)
 let rec evalP prog env = 
   match prog with 
-    | LetVarP (fp, e1, body) ->
-      (match (evalE e1 env) with 
-        | v1 -> evalP body (insertEnv fp v1 env))
-    | LetFunP (fn, fp, fpType, e, body) ->
-      let v = ClosureV (fp, e, env) in 
-        evalP body (insertEnv fn v env)
-    | LetRecP (fn, fp, fpType, e, eType, body) ->
-      let v = RecClosureV (fp, fn, e, env) in 
-        evalP body (insertEnv fn v env)
-    | ExpP e -> (evalE e env)
-
+  | LetVarP (fp, e1, body) ->
+    let v1 = evalE e1 env in
+    evalP body (insertEnv fp v1 env)
+  | LetRecP (fn, fp, fpType, e, eType, body) ->
+    let v = RecClosureV (fp, fn, e, env) in 
+    evalP body (insertEnv fn v env)
+  | LetFunP (fn, fp, fpType, e, body) ->
+    let v = ClosureV (fp, e, env) in 
+    evalP body (insertEnv fn v env)
+  | ExpP e -> evalE e env
 
 let run input = 
  try (
