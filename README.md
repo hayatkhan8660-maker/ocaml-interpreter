@@ -1,6 +1,6 @@
 # OCaml Program README
 
-This repository contains an OCaml program that implement a non-trivial system in Ocaml. Including an interpreter with type checker and process expression.
+This repository contains an OCaml program that implement a non-trivial system in Ocaml. Including an parser, type checker and interpreter.
 
 ## Prerequisites
 
