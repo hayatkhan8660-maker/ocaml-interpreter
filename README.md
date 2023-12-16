@@ -12,16 +12,16 @@ Before running the program, ensure that you have the following prerequisites ins
 
 Follow these steps to run the OCaml program:
 
-1. **Download the Ocaml program and run Ocaml on your terminal**
+1. **Download the program and run Ocaml on your terminal**
 
     ```bash
     ocaml
     ```
 
-2. **Use interpreter.ml(Pay attention to your cmd path be same as the program file path)**
+2. **Use interpreter.ml in Ocaml(Pay attention to your cmd path be same as the program file path)**
 
     ```bash
-    #use "interpreter.ml"
+    #use "interpreter.ml" ;;
     ```
 
 
