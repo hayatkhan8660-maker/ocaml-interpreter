@@ -28,14 +28,32 @@ Follow these steps to run the OCaml program:
 
 ## Usage
 
-Explain how to use the program, including any command-line options, input formats, or example commands.
-
 **Then you are ready to enter some examples same as bellow:**
 
 ```bash
-let testRecNat = "let rec h (n:int) = (if 0 < n then (n * (h (n - 1))) else 1 : int) in (h 5)"
+let testBinOp = 
+   "(2 + 3)" ;;
+(*
+# run testBinOp ;;
+Type is: int
+- : string = "5"
+*)
+  
+let testCond = 
+   "if 2 < 3 then if 5 < 4 then 7 else 8 else 9" ;;
+(*
+# run testCond ;;
+Type is: int
+- : string = "8"
+*)
 
+let testRecNat = "let rec h (n:int) = (if 0 < n then (n * (h (n - 1))) else 1 : int) in (h 5)"
 run testRecNat ;;
+(*
+# run testRecNat ;;
+Type is: int
+- : string = "120"
+*)
 
 let testRecList =
 "let rec map (f:(int -> int)) =
@@ -48,4 +66,10 @@ in let add2 (x:int) = (x + 2)
 in ((map add2) (7 :: (4 :: ([] : (int list)))))"
 
 run testRecList ;;
+(*
+# run testRecList ;;
+Type is: int list
+- : string = "[ 9 ; 6 ]"
+*)
+
 ```
